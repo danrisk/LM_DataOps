@@ -26,15 +26,90 @@ con <- DBI::dbConnect(odbc::odbc(),
 
 
 
-cobertura <- tbl(con, "ADPOLCOB") |> 
-  filter(cramo == 18,
-         fanopol == 2025,
-         fmespol == 12,
-         ccober == "1") |> 
+Recibos <- tbl(con, "ADRECIBOS") |> 
+  filter(
+    fcobro >= "2025-01-01",
+    fcobro <= "2025-12-31",
+    iestadorec == "C") |> 
   collect()
 
-macoberturas <- tbl(con, "MACOBERTURAS") |>
+maramos <- tbl(con, "MARAMOS") |> 
   collect()
+
+Recibos_ramos <- Recibos |> 
+  left_join(maramos, by ="cramo")
+
+
+Recibos_REASEGUROS <- Recibos_ramos |> 
+  select(cnpoliza, xdescripcion_l, femision, fdesde_pol, fhasta_pol, ctenedor, 
+         crecibo, fdesde, fhasta, fcobro, cmoneda, ptasamon_pago, ptasamon, msumabruta, msumabrutaext, mprimabruta, mprimabrutaext,
+         pcomision, mcomision, mcomisionext, mpcedida, mpcedidaext, mpret, mpretext, mpfp, mpfpext) |> 
+  rename("Nº de Póliza" = cnpoliza,
+         Ramo = xdescripcion_l,
+         "Fecha de Emmision Recibo" = femision,
+         "Fecha desde Póliza" = fdesde_pol,
+         "Fecha Hasta Póliza" = fhasta_pol,
+         "Cédula Tomador" = ctenedor,
+         "Nro de Recibo" = crecibo,
+         "Fecha desde Recibo" = fdesde,
+         "Fecha hasta Recibo" = fhasta,
+         "Fecha de Cobro" = fcobro,
+         Moneda = cmoneda,
+         "Tasa de Cambio al pago" = ptasamon_pago,
+         "Tasa de Cambio" = ptasamon,
+         "Suma Asegurada" = msumabruta,
+         "Suma Asegurada Moneda Extranjera" = msumabrutaext,
+         "Prima Bruta" = mprimabruta,
+         "Prima Bruta Moneda Extranjera" = mprimabrutaext,
+         "Porcentaje de Comisión" = pcomision,
+         "Monto de Comisión" = mcomision,
+         "Monto Comision Extranjera" = mcomisionext,
+         "Prima Cedida en Reaseguro" = mpcedida,
+         "Prima Cedida Moneda Extranjera"= mpcedidaext,
+         "Prima Cedida Facultativo" = mpfp,
+         "Prima Cedida Facultativo Moneda Extranjera" = mpfpext,
+         "Prima Retenida" = mpret,
+         "Prima Retenida Moneda Extranjera" = mpretext) %>% 
+  group_by(Ramo) %>% 
+  summarise(`Prima Cedida en Reaseguro` = sum(`Prima Cedida en Reaseguro`),
+            `Prima Cedida en Moneda Extranjera` = sum(`Prima Cedida Moneda Extranjera`),
+            `Prima Cedida Facultativo` = sum(`Prima Cedida Facultativo`),
+            `Prima Cedida Facultativo Moneda Extranjera` = sum(`Prima Cedida Facultativo Moneda Extranjera`),
+            `Prima Retenida` = sum(`Prima Retenida`),
+            `Prima Retenida Moneda Extranjera` = sum(`Prima Retenida Moneda Extranjera`))
+
+
+cuentas <- tbl(contabilidad, "SCCUENTA") |> 
+  collect()
+
+saldos <- tbl(contabilidad, "SCREN_CO") |> 
+  filter(fec_emis >= as.Date("2025-01-01"),
+         fec_emis <= as.Date("2025-12-31")) |> 
+  collect()
+
+
+Contabilidad <- left_join(saldos, cuentas, by = "co_cue")
+
+Contabilidad_consolidada <- Contabilidad |> 
+  mutate(saldo = abs(monto_d - monto_h),
+         nro_recibo = str_extract(descri, "(?<=Nro_Recibo\\s|RECIBO\\s)[0-9-]+")) |> 
+  select(co_cue, des_cue, nro_recibo, fec_emis, descri, monto_d, monto_h, saldo)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 library(pointblank)

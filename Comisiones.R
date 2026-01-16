@@ -2,17 +2,77 @@ library(tidyverse)
 library(openxlsx)
 library(readr)
 library(readxl)
+library(DBI)
+library(odbc)
+
 
 options(scipen = 999)
 options(digits=7)
 
 
-reporte_comisiones <- read_excel("reporte_comisiones.xlsx")
-reporte_recibos <- read_excel("recibo_0110.xlsx")
-#reporte_contabilidad_comisiones <- 
 
-primas_rec <- primas_rec |> 
-  mutate(Saldo = Haber - Debe)
+contabilidad <- DBI::dbConnect(odbc::odbc(),
+                               Driver   = "ODBC Driver 17 for SQL Server",
+                               Server   = "192.168.8.14",
+                               Database = "CLAMUND",
+                               UID      = "danny2",
+                               PWD      = "ReadyLove100*",
+                               Port     = 1433)
+
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = "ODBC Driver 17 for SQL Server",
+                      Server   = "172.30.149.67",
+                      Database = "Sis2000",
+                      UID      = "dmorales",
+                      PWD      = "lamundial*2025*morales",
+                      Port     = 1433)
+
+
+maramos <- tbl(con, "MARAMOS") |> 
+  collect()
+
+RECIBOS <- tbl(con, "ADRECIBOS") |> 
+  filter(fcobro >= "2025-01-01",
+         fcobro <= "2025-12-31",
+         iestadorec == "C") |> 
+  group_by(cramo) |>
+  summarise(monto_comision = sum(mcomision),
+            Cantidad_recibos = n()) |>
+  collect()
+
+
+cuentas <- tbl(contabilidad, "SCCUENTA") |> 
+  collect()
+
+saldos <- tbl(contabilidad, "SCREN_CO") |> 
+  filter(fec_emis >= as.Date("2025-01-01"),
+         fec_emis <= as.Date("2025-12-31")) |> 
+  collect()
+
+
+Contabilidad <- left_join(saldos, cuentas, by = "co_cue")
+
+Contabilidad_consolidada <- Contabilidad |> 
+  mutate(saldo = abs(monto_d - monto_h),
+         nro_recibo = str_extract(descri, "(?<=Nro_Recibo\\s|RECIBO\\s)[0-9-]+")) |> 
+  select(co_cue, des_cue, nro_recibo, fec_emis, descri, monto_d, monto_h, saldo)
+
+
+
+
+Comision_Resumen_SISIP <- RECIBOS |> 
+  left_join(maramos) %>% 
+  select(xdescripcion_l, monto_comision, Cantidad_recibos ) %>% 
+  rename(Ramo = xdescripcion_l)
+
+Comision_Resumen_Contabilidad <- Contabilidad_consolidada %>% 
+  mutate(ramo = str_extract(des_cue, "(?<=COMISIONES -\\s|COMISION -\\s).*")) %>% 
+  drop_na(ramo)
+
+Comision_Resumen_CONTABILIDAD <- Comision_Resumen_Contabilidad %>% 
+  group_by(ramo) %>% 
+  summarise(monto_comision = sum(saldo))
+
 # Lógica de Conciliación
 reporte_comparacion <- left_join(primas_rec,recibos_detalles_comparacion,
                                  by = c("Numero_recibo"= "Nro de Recibo")) |>
@@ -29,7 +89,7 @@ reporte_comparacion <- left_join(primas_rec,recibos_detalles_comparacion,
   filter(Estado != "OK")
 
 
-write.xlsx(reporte_comparacion, "comparativo_primas.xlsx")
+write.xlsx(Comision_Resumen_SISIP, "Comisiones Consolidado SISIP.xlsx", overwrite = TRUE)
 
 
 

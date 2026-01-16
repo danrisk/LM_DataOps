@@ -2,21 +2,23 @@ library(tidyverse)
 library(openxlsx)
 library(readr)
 library(readxl)
+library(DBI)
+library(odbc)
 
 options(scipen = 999)
 options(digits=7)
 
 #### conexiones versión database
-contabilidad <- DBI::dbConnect(odbc::odbc(),
+PROFIT <- DBI::dbConnect(odbc::odbc(),
                                Driver   = "ODBC Driver 17 for SQL Server",
                                Server   = "192.168.8.14",
-                               Database = "CMUNDIAL",
+                               Database = "CLAMUND",
                                UID      = "danny2",
                                PWD      = "ReadyLove100*",
                                Port     = 1433)
 
 
-con <- DBI::dbConnect(odbc::odbc(),
+SYSIP <- DBI::dbConnect(odbc::odbc(),
                       Driver   = "ODBC Driver 17 for SQL Server",
                       Server   = "172.30.149.67",
                       Database = "Sis2000",
@@ -24,32 +26,16 @@ con <- DBI::dbConnect(odbc::odbc(),
                       PWD      = "lamundial*2025*morales",
                       Port     = 1433)
 
-maramos <- tbl(con, "MARAMOS") |> 
-  collect()
 
-RECIBOS <- tbl(con, "ADRECIBOS") |> 
-  filter(fcobro >= "2024-12-01",
-         fcobro <= "2025-12-31",
-         iestadorec == "C") |> 
-  group_by(cramo) |> 
-  summarise(prima = sum(mprimabruta),
-            Cantidad_recibos = n()) |> 
-  collect()
-
-Primas_Resumen <- RECIBOS |> 
-  left_join(maramos)
-
-Primas_Resumen <- Primas_Resumen |> 
-  select(xdescripcion_l, prima, Cantidad_recibos ) |> 
-  rename(Ramo = xdescripcion_l,
-         Prima = prima,
-         "Cantidad de Recibos" = Cantidad_recibos)
 #######
-Recibos <- tbl(con, "ADRECIBOS") |> 
+Recibos <- tbl(SYSIP, "ADRECIBOS") |> 
   filter(
-    fcobro >= "2024-12-01",
+    fcobro >= "2025-01-01",
          fcobro <= "2025-12-31",
          iestadorec == "C") |> 
+  collect()
+
+maramos <- tbl(SYSIP, "MARAMOS") |> 
   collect()
 
 Recibos_ramos <- Recibos |> 
@@ -61,7 +47,7 @@ Recibos_detalle <- Recibos_ramos |>
          pcomision, mcomision, mcomisionext, mpcedida, mpcedidaext, mpret, mpretext, mpfp, mpfpext) |> 
   rename("Nº de Póliza" = cnpoliza,
          Ramo = xdescripcion_l,
-         "Fecha de Emmision Recibo" = femision,
+         "Fecha de Emision Recibo" = femision,
          "Fecha desde Póliza" = fdesde_pol,
          "Fecha Hasta Póliza" = fhasta_pol,
          "Cédula Tomador" = ctenedor,
@@ -81,26 +67,30 @@ Recibos_detalle <- Recibos_ramos |>
          "Prima Cedida en Reaseguro" = mpcedida,
          "Prima Cedida Moneda Extranjera"= mpcedidaext,
          "Prima Cedida Facultativo" = mpfp,
-         "Prima Cedida Facultativ Moneda Extranjera" = mpfpext,
+         "Prima Cedida Facultativo Moneda Extranjera" = mpfpext,
          "Prima Retenida" = mpret,
-         "Prima Retenida Moneda Extranjera" = mpretext) |>
-  mutate(dia = day(`Fecha de Cobro`),
-         mes = month(`Fecha de Cobro`, label = TRUE)) |>
-  group_by(dia) |>
-  summarise(Prima = sum(`Prima Bruta`),
-            Cantidad_Recibos = n())
+         "Prima Retenida Moneda Extranjera" = mpretext)
 
 
+Poliza <- tbl(SYSIP, "ADPOLIZA") |> 
+  filter(
+    fanopol == 2025,
+    fmespol %in% c(1:12),
+    cramo == 18) |> 
+  collect()
 
 
-write.xlsx(RRC, "CALCULO_RRC.xlsx", overwrite = TRUE)
+Poliza_auto <- Poliza %>% 
+mutate(ramo_auto = str_detect(cplan, regex("rcv", ignore_case = TRUE)))
+
+write.xlsx(prima_por_ramo, "prima_sisip.xlsx", overwrite = TRUE)
 write.xlsx(Primas_Contabilidad_Diciembre, "cuadre_con.xlsx", overwrite = TRUE)
 
 # Conciliación Auditada
 
 Recibos_detalles_comparacion <- Recibos_ramos |> 
   select(cnpoliza, xdescripcion_l, femision, fdesde_pol, fhasta_pol, ctenedor, 
-         cnrecibo, fdesde, fhasta, fcobro, cmoneda, ptasamon_pago, ptasamon, msumabruta, msumabrutaext, mprimabruta, mprimabrutaext,
+         crecibo, fdesde, fhasta, fcobro, cmoneda, ptasamon_pago, ptasamon, msumabruta, msumabrutaext, mprimabruta, mprimabrutaext,
          pcomision, mcomision, mcomisionext, mpcedida, mpcedidaext, mpret, mpretext, mpfp, mpfpext) |> 
   rename("Nº de Póliza" = cnpoliza,
          Ramo = xdescripcion_l,
@@ -108,7 +98,7 @@ Recibos_detalles_comparacion <- Recibos_ramos |>
          "Fecha desde Póliza" = fdesde_pol,
          "Fecha Hasta Póliza" = fhasta_pol,
          "Cédula Tomador" = ctenedor,
-         "Nro de Recibo" = cnrecibo,
+         "Nro de Recibo" = crecibo,
          "Fecha desde Recibo" = fdesde,
          "Fecha hasta Recibo" = fhasta,
          "Fecha de Cobro" = fcobro,
@@ -127,9 +117,7 @@ Recibos_detalles_comparacion <- Recibos_ramos |>
          "Prima Cedida Facultativo" = mpfp,
          "Prima Cedida Facultativ Moneda Extranjera" = mpfpext,
          "Prima Retenida" = mpret,
-         "Prima Retenida Moneda Extranjera" = mpretext) |> 
-  arrange(`Nro de Recibo`)
-
+         "Prima Retenida Moneda Extranjera" = mpretext)
 
 Primas_Contabilidad_Diciembre <- PRIMAS_DICIEMBRE |> 
   mutate(Saldo = Haber - Debe,
@@ -182,6 +170,25 @@ primas_consolidadas <- Recibos_detalles_comparacion |>
   Primas_Tecnicas <- read_excel("~/Downloads/Primas_Tecnicas.xlsx")
   
    ramos <- read_excel("~/Downloads/ramos.xlsx")
+   
+   # version base de datos
+   
+   cuentas <- tbl(contabilidad, "SCCUENTA") |> 
+     collect()
+   
+   saldos <- tbl(contabilidad, "SCREN_CO") |> 
+     filter(fec_emis >= as.Date("2025-01-01"),
+            fec_emis <= as.Date("2025-12-31")) |> 
+     collect()
+   
+   
+   Contabilidad <- left_join(saldos, cuentas, by = "co_cue")
+   
+   Contabilidad_consolidada <- Contabilidad |> 
+     mutate(saldo = abs(monto_d - monto_h),
+            nro_recibo = str_extract(descri, "(?<=Nro_Recibo\\s|RECIBO\\s)[0-9-]+")) |> 
+     select(co_cue, des_cue, nro_recibo, fec_emis, descri, monto_d, monto_h, saldo) |>
+     drop_na(nro_recibo)
   
   ###### Procesamos la información dessde su origen
   
@@ -201,7 +208,7 @@ primas_consolidadas <- Recibos_detalles_comparacion |>
            pcomision, mcomision, mcomisionext, mpcedida, mpcedidaext, mpret, mpretext, mpfp, mpfpext) |> 
     rename("Nº de Póliza" = cnpoliza,
            Ramo = xdescripcion_l,
-           "Fecha de Emmision Recibo" = femision,
+           "Fecha de Emision Recibo" = femision,
            "Fecha desde Póliza" = fdesde_pol,
            "Fecha Hasta Póliza" = fhasta_pol,
            "Cédula Tomador" = ctenedor,
@@ -226,10 +233,29 @@ primas_consolidadas <- Recibos_detalles_comparacion |>
            "Prima Retenida" = mpret,
            "Prima Retenida Moneda Extranjera" = mpretext)
 
-  Primas_auditadas <- Prima_Contable |> 
-    left_join(Primas_Tecnicas, by = "Nro_Recibo")
+  Primas_auditadas <- Recibos_detalles_comparacion %>%  
+    full_join( Contabilidad_consolidada, by = c("Nro de Recibo" = "nro_recibo")) 
   
-  Primas_auditadas <-  Primas_auditadas |> 
+  
+  
+  Primas_auditadas <-  Primas_auditadas |>
+    drop_na(nro_recibo) |>
+    group_by(nro_recibo) |>
+    summarise(Monto_PROFIT = sum(saldo),
+              Monto_SISIP = sum())
+    
+  
+  contabilidad_ramo <- Contabilidad_consolidada %>% 
+    group_by()
+  
+  prima_por_ramo <- Recibos_detalles_comparacion %>% 
+    group_by(Ramo) %>% 
+    summarise(prima = sum(`Prima Bruta`))
+  
+    sum(Contabilidad_consolidada$saldo)
+    
+    sum(Recibos_detalles_comparacion$`Prima Bruta`)
+    
     mutate(Saldo = replace_na(Saldo,0),
            `Prima Bruta` = replace_na(`Prima Bruta`,0),
            `Porcentaje de Comisión` = replace_na(`Porcentaje de Comisión`,0),
@@ -244,7 +270,7 @@ primas_consolidadas <- Recibos_detalles_comparacion |>
   
   
   
-  
+  sum(prima_por_ramo$prima)
   
   
  
