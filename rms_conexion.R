@@ -6,8 +6,8 @@ library(RPostgres)
 library(DBI)
 library(odbc)
 
-options(scipen = 999)
-options(digits=7)
+
+
 
 #### conexiones versión database
 RMS <- dbConnect(RPostgres::Postgres(),
