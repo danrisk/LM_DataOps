@@ -16,3 +16,8 @@ RMS <- dbConnect(RPostgres::Postgres(),
                         port = 5432,
                         user = 'danmorestad',
                         password = 'estad2025')
+
+
+
+tablas <- dbListTables(RMS)
+print(tablas)

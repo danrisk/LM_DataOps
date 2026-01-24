@@ -12,7 +12,7 @@ options(digits=7)
 PROFIT <- DBI::dbConnect(odbc::odbc(),
                                Driver   = "ODBC Driver 17 for SQL Server",
                                Server   = "192.168.8.14",
-                               Database = "CLAMUND",
+                               Database = "CMUNDIAL",
                                UID      = "danny2",
                                PWD      = "ReadyLove100*",
                                Port     = 1433)
@@ -30,8 +30,8 @@ SYSIP <- DBI::dbConnect(odbc::odbc(),
 #######
 Recibos <- tbl(SYSIP, "ADRECIBOS") |> 
   filter(
-    fcobro >= "2025-01-01",
-         fcobro <= "2025-12-31",
+    fcobro >= "2026-01-01",
+         fcobro <= "2026-01-15",
          iestadorec == "C") |> 
   collect()
 
@@ -173,12 +173,12 @@ primas_consolidadas <- Recibos_detalles_comparacion |>
    
    # version base de datos
    
-   cuentas <- tbl(contabilidad, "SCCUENTA") |> 
+   cuentas <- tbl(PROFIT, "SCCUENTA") |> 
      collect()
    
-   saldos <- tbl(contabilidad, "SCREN_CO") |> 
-     filter(fec_emis >= as.Date("2025-01-01"),
-            fec_emis <= as.Date("2025-12-31")) |> 
+   saldos <- tbl(PROFIT, "SCREN_CO") |> 
+     filter(fec_emis >= as.Date("2026-01-01"),
+            fec_emis <= as.Date("2026-01-15")) |> 
      collect()
    
    
